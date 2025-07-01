@@ -66,9 +66,9 @@ class TestADBGameAutomation(ADBGameAutomation):
             # self.handle_global_rich(current_screen)
             # self.handle_dock(current_screen)
             # self.elite_stage(current_screen)
-            self.handle_dungeon_stage(current_screen)
+            # self.handle_dungeon_stage(current_screen)
             # self.handle_battle(current_screen)
-            # self.handle_main_story(current_screen)
+            self.handle_main_story(current_screen)
 
     def check_skip_dialog(self, current_screen):
         self.find_and_tap(current_screen, self.button_paths['skip_dialog'],  log="skip_dialog")
@@ -104,6 +104,7 @@ class TestADBGameAutomation(ADBGameAutomation):
     def handle_main_story(self, current_screen):
         self.find_and_tap(current_screen, self.button_paths['levelup'], log="levelup", threshold=0.6)
         self.find_and_tap(current_screen, self.button_paths['challenge'], log="challenge", threshold=0.8)
+        self.handle_battle(current_screen)
 
     def handle_elite_stage(self, current_screen):
         self.find_and_tap(current_screen, self.button_paths['elite_join_battle'], use_enhanced=False, log="elite_join_battle", threshold=0.8)

@@ -226,8 +226,6 @@ class ADBGameAutomation(BaseGameAutomation):
             "capture_interval": self._capture_interval
         }
         
-    def optimize_adb_connection(self):
-        self.adb.optimize_adb_connection()
 
     def batch_find_templates(self, template_names: list, threshold: float = 0.9, use_enhanced: bool = False) -> dict:
         results = {}
