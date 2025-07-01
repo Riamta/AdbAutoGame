@@ -43,16 +43,6 @@ logs/
 *.log
 log.txt
 
-# Project specific
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.bmp
-*.mp4
-*.avi
-*.mov
-
 # OS specific
 .DS_Store
 Thumbs.db
