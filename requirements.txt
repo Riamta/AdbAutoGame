@@ -1,0 +1,31 @@
+# Core dependencies
+opencv-python>=4.8.0
+numpy>=1.24.0
+pyautogui>=0.9.54
+pillow>=10.0.0
+pyyaml>=6.0.1
+
+# Window management
+pywin32>=306; platform_system == "Windows"
+pygetwindow>=0.0.9
+
+# Mobile automation
+pure-python-adb>=0.3.0.dev0
+
+# Utilities
+mss>=9.0.1  # Fast screen capture
+keyboard>=0.13.5
+mouse>=0.7.1
+colorama>=0.4.6
+
+# Development
+pytest>=7.4.0
+black>=23.7.0
+flake8>=6.1.0
+mypy>=1.5.1
+pre-commit>=3.3.3
+
+# Additional dependencies
+typing-extensions==4.7.1
+python-dotenv==1.0.0
+pylint==2.17.5  # for linting 
