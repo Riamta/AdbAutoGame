@@ -2,7 +2,8 @@ from ppadb.client import Client as AdbClient
 from typing import Optional, List, Tuple
 import time
 import os
-from utils import log_error, log_info, log_success, log_warning
+import subprocess
+from utils import log_error, log_info, log_success, log_warning, log
 
 # Key codes for ADB input
 KEYCODE_HOME = 3
@@ -12,9 +13,10 @@ KEYCODE_VOLUME_UP = 24
 KEYCODE_VOLUME_DOWN = 25
 KEYCODE_POWER = 26
 KEYCODE_ENTER = 66
-
+HOSTS = [
+    "127.0.0.1:7555",
+]
 def _setup_adb_path():
-    """Set up ADB path from binaries directory"""
     try:
         # Get the absolute path to the binaries directory
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,7 +25,7 @@ def _setup_adb_path():
         
         if os.path.exists(adb_path):
             os.environ['ADBUTILS_ADB_PATH'] = adb_path
-            log_info(f"Using ADB from: {adb_path}")
+            log(f"Using ADB from: {adb_path}")
         else:
             log_error(f"ADB not found at: {adb_path}")
     except Exception as e:
@@ -41,14 +43,14 @@ class ADBController:
 
     def check_adb_connection(self) -> bool:
         try:
-            log_info("Checking ADB connection...")
+            log("Checking ADB connection...")
             devices = self.client.devices()
-            log_info(f"Devices: {devices}")
+            log(f"Devices: {devices}")
             if devices:
                 # Log all available devices and their ports
-                log_info("Available devices:")
+                log("Available devices:")
                 for device in devices:
-                    log_info(f"Device: {device.serial}")
+                    log(f"Device: {device.serial}")
                     
                 if self.device_id is None:
                     # If multiple devices, let user choose
@@ -64,7 +66,7 @@ class ADBController:
                                 if 0 <= device_index < len(devices):
                                     self.device = devices[device_index]
                                     self.device_id = self.device.serial
-                                    log_info(f"Connected to device: {self.device_id}")
+                                    log_success(f"Connected to device: {self.device_id}")
                                     return True
                                 else:
                                     print(f"Invalid choice. Please enter a number between 1 and {len(devices)}")
@@ -86,82 +88,66 @@ class ADBController:
                             self.device = device
                             log_info(f"Connected to device: {self.device_id}")
                             return True
+            log_warning("Can't find device, trying to connect with ports")            
+            for host in HOSTS:
+                log_info(f"Checking ADB connection with ports: {host}")
+                if self.check_adb_connection_with_ports(host):
+                    return True
+            
             return False
+                    
         except Exception as e:
             log_error(f"Error checking ADB connection: {e}")
+            # Try port scanning as fallback
+            for host in self.host:
+                if self.check_adb_connection_with_ports(host):
+                    return True
             raise
 
-    def check_adb_connection_with_ports(self, start_port=5037, end_port=7556) -> bool:
-        # Common ports for various emulators
-        priority_ports = [
-            5037,   # Default ADB
-            5555,   # Common Android Debug Bridge
-            5565, 5575, 5585,  # BlueStacks
-            7555,   # MuMu Player
-            16384,  # NoxPlayer
-            21503,  # MuMu Player (alternative)
-            62001   # LDPlayer
-        ]
-        
-        # Add extended range ports
-        extended_ports = (
-            list(range(5037, 5100)) +  # ADB and BlueStacks range
-            list(range(7555, 7565)) +  # MuMu Player range
-            list(range(16380, 16390)) +  # NoxPlayer range
-            list(range(21500, 21510)) +  # MuMu Player alternative range
-            list(range(62000, 62010))    # LDPlayer range
-        )
-        
-        # Combine and deduplicate ports
-        all_ports = list(set(priority_ports + extended_ports))
-        log_info(f"Scanning ports: {all_ports}")
-        
-        # Try priority ports first, then others
-        for port in all_ports:
-            try:
-                log_info(f"Attempting connection on port {port}...")
-                client = AdbClient(host=self.host, port=port)
+    def check_adb_connection_with_ports(self, address: str) -> bool:
+        # Lấy đường dẫn tới file thực thi ADB
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.dirname(os.path.dirname(current_dir))
+        adb_exe_path = os.path.join(root_dir, 'src', 'binaries', 'adb.exe')
+        # Kiểm tra file ADB có tồn tại không
+        if not os.path.exists(adb_exe_path):
+            log_error(f"Không tìm thấy file ADB tại: {adb_exe_path}")
+            return False
+        try:
+            # Thử kết nối bằng lệnh adb connect
+            subprocess.run(
+                [adb_exe_path, "connect", address],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
                 
-                # Try to explicitly connect if it's a device address
-                if ':' in str(self.device_id):
-                    try:
-                        log_info(f"Attempting to connect to device {self.device_id} on port {port}")
-                        client.connect(self.device_id)
-                    except Exception as connect_err:
-                        log_warning(f"Failed to connect to device {self.device_id} on port {port}: {connect_err}")
-                        continue
-                
-                devices = client.devices()
-                log_info(f"Found devices on port {port}: {devices}")
-                
-                if devices:
-                    self.client = client
-                    self.port = port
-                    if self.device_id:
-                        for device in devices:
-                            if device.serial == self.device_id:
-                                self.device = device
-                                log_success(f"Connected to device {self.device_id} on port {port}")
-                                return True
-                    else:
-                        self.device = devices[0]
-                        self.device_id = self.device.serial
-                        log_success(f"Connected to device {self.device_id} on port {port}")
-                        return True
-            except Exception as e:
-                if "actively refused" in str(e):
-                    log_warning(f"Port {port} is not accepting connections. Is the emulator's ADB enabled?")
-                elif "No such file or directory" in str(e):
-                    log_warning(f"ADB server not running. Try running 'adb start-server'")
+            # Thử thiết lập kết nối qua ppadb
+            client = AdbClient(host=self.host, port=self.port)
+            devices = client.devices()
+            
+            if devices:
+                self.client = client
+                # Kiểm tra ID thiết bị cụ thể nếu có
+                if self.device_id:
+                    for device in devices:
+                        if device.serial == self.device_id or device.serial == address:
+                            self.device = device
+                            self.device_id = device.serial
+                            log_success(f"Đã kết nối tới thiết bị {self.device_id}")
+                            return True
                 else:
-                    log_warning(f"Failed to connect on port {port}: {e}")
-                continue
-        
-        log_error("Failed to connect to any ADB devices. Please check:")
-        log_error("1. Is your emulator running?")
-        log_error("2. Is ADB enabled in your emulator settings?")
-        log_error("3. Try running 'adb kill-server && adb start-server'")
-        return False
+                    # Sử dụng thiết bị đầu tiên nếu không chỉ định
+                    self.device = devices[0]
+                    self.device_id = self.device.serial
+                    log_success(f"Đã kết nối tới thiết bị {self.device_id}")
+                    return True
+                    
+            return False
+            
+        except Exception as e:
+            log_error(f"Lỗi khi thử kết nối: {e}")
+            return False
 
     def get_screen_size(self) -> Tuple[int, int]:
         try:
@@ -173,6 +159,7 @@ class ADBController:
             return (0, 0)
 
     def tap(self, x: int, y: int, duration: float = 0.1) -> bool:
+        """Tap at the specified coordinates."""
         try:
             self.device.shell(f"input touchscreen tap {x} {y}")
             time.sleep(duration)
@@ -217,7 +204,6 @@ class ADBController:
         return self.press_key(KEYCODE_HOME)
 
     def capture_screen_raw(self) -> Optional[bytes]:
-        """Capture the screen and return raw bytes."""
         try:
             return self.device.screencap()
         except Exception as e:

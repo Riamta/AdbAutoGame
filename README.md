@@ -1,58 +1,58 @@
 # Game Auto Framework
 
-Framework tự động hóa (auto) cho các game mobile sử dụng ADB và xử lý ảnh. Framework này cho phép bạn dễ dàng tạo auto cho bất kỳ game mobile nào bằng cách sử dụng template matching và ADB controls.
+A mobile game automation framework using ADB and image processing. This framework allows you to easily create automation scripts for any mobile game using template matching and ADB controls.
 
-## Tính năng
+## Features
 
-- Hệ thống core linh hoạt:
-  - ADB controller cho tương tác với thiết bị
-  - Template matching engine để nhận diện UI elements
-  - Hệ thống logging đầy đủ
-  - Xử lý đa luồng cho performance tốt hơn
-  - Dễ dàng mở rộng cho game mới
+- Flexible core system:
+  - ADB controller for device interaction
+  - Template matching engine for UI element recognition
+  - Comprehensive logging system
+  - Multi-threading for better performance
+  - Easy to extend for new games
 
-- Các thao tác cơ bản:
-  - Click/Tap tọa độ
+- Basic operations:
+  - Click/Tap coordinates
   - Swipe/Drag
-  - Tìm và click theo template
-  - Capture màn hình
-  - Xử lý keyboard input
-  - Điều khiển thiết bị (back, home, etc.)
+  - Find and click by template
+  - Screen capture
+  - Keyboard input handling
+  - Device control (back, home, etc.)
 
-## Yêu cầu
+## Requirements
 
 - Python 3.7+
-- ADB (Android Debug Bridge) - đã được đính kèm trong thư mục `src/binaries`
-- Thiết bị Android hoặc Emulator (hỗ trợ nhiều emulator: MuMu, NoxPlayer, BlueStacks, etc.)
+- ADB (Android Debug Bridge) - included in `src/binaries`
+- Android device or Emulator (supports multiple emulators: MuMu, NoxPlayer, BlueStacks, etc.)
 
-## Cài đặt
+## Installation
 
-1. Clone repository này về máy
-2. Cài đặt các thư viện Python cần thiết:
+1. Clone this repository
+2. Install required Python libraries:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Cấu hình
+## Configuration
 
-1. Đảm bảo thiết bị Android/Emulator đã bật chế độ USB Debugging
-2. Kết nối thiết bị với máy tính qua USB hoặc qua mạng (ADB over network)
-3. Kiểm tra kết nối ADB:
+1. Ensure Android device/Emulator has USB Debugging enabled
+2. Connect device to computer via USB or network (ADB over network)
+3. Check ADB connection:
 ```bash
 .\src\binaries\adb.exe devices
 ```
 
-## Cấu trúc thư mục
+## Directory Structure
 
 ```
 ├── assets/
 │   ├── game1/
-│   │   └── templates/        # Template ảnh cho game1
+│   │   └── templates/        # Image templates for game1
 │   ├── game2/
-│   │   └── templates/        # Template ảnh cho game2
+│   │   └── templates/        # Image templates for game2
 │   └── ...
 ├── src/
-│   ├── binaries/            # ADB và các file binary
+│   ├── binaries/            # ADB and binary files
 │   ├── core/                # Core modules
 │   │   ├── adb.py          # ADB controller
 │   │   ├── adb_auto.py     # Game automation base class
@@ -67,21 +67,21 @@ pip install -r requirements.txt
 │       └── logging.py      # Logging system
 ├── logs/                   # Log files
 ├── requirements.txt        # Python dependencies
-└── run_*.py               # Runner scripts cho từng game
+└── run_*.py               # Runner scripts for each game
 ```
 
-## Tạo Auto cho Game Mới
+## Creating Auto for New Game
 
-1. Tạo thư mục templates:
+1. Create templates directory:
 ```
 assets/your_game/templates/
 ```
 
-2. Thu thập templates:
-- Chụp ảnh các UI element cần nhận diện
-- Lưu vào thư mục templates với tên mô tả
+2. Collect templates:
+- Take screenshots of UI elements to recognize
+- Save them in templates directory with descriptive names
 
-3. Tạo game class:
+3. Create game class:
 ```python
 from src.core.adb_auto import ADBGameAutomation
 
@@ -96,7 +96,7 @@ class YourGameAutomation(ADBGameAutomation):
             # Implement your game logic here
 ```
 
-4. Tạo runner script:
+4. Create runner script:
 ```python
 from src.games.your_game import YourGameAutomation
 

@@ -20,8 +20,15 @@ def log_warning(message: str):
 
 def log_success(message: str):
     log_with_time(message, Fore.GREEN)
+
 def log_info(message: str):
     log_with_time(message, Fore.CYAN)
+
+def log_state(message: str):
+    log_with_time(message, Fore.BLUE)
+
+def log(message: str):
+    log_with_time(message, Fore.WHITE)
 
 def set_current_state(state: str):
     global current_state

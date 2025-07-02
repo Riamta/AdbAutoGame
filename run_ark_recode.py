@@ -10,25 +10,27 @@ from pathlib import Path
 src_dir = Path(__file__).parent / 'src'
 sys.path.append(str(src_dir))
 
-from src.games.cherry_tale import CherryTale
-from utils import log_error, log_info, log_success, log_warning
+from src.games.ark_recode import ArkRecode
+from src.utils.logging import setup_logger
 
 def main():
     # Set up logging
-    log_success("Starting Cherry Tale automation")
+    logger = setup_logger("ark-recode")
+    logger.info("Starting Ark Recode automation")
     
     try:
         # Initialize automation
-        game = CherryTale()
+        game = ArkRecode()
+        
         # Start automation
         game.start()
         
     except KeyboardInterrupt:
-        log_info("Automation stopped by user")
+        logger.info("Automation stopped by user")
     except Exception as e:
-        log_error(f"Error running automation: {e}", exc_info=True)
+        logger.error(f"Error running automation: {e}", exc_info=True)
     finally:
-        log_info("Automation ended")
+        logger.info("Automation ended")
 
 if __name__ == "__main__":
     main() 
