@@ -24,7 +24,7 @@ class ADBGameAutomation(BaseGameAutomation):
             self.monitor["height"] = height
         
         # Override continuous capture settings for ADB
-        self.capture_interval = 0.5  # Capture every 0.5 seconds for ADB
+        self.capture_interval = 0.1  # Capture every 0.5 seconds for ADB
     
     def _continuous_capture_worker(self):
         log_info("Starting continuous ADB screen capture thread")

@@ -5,7 +5,7 @@ from pathlib import Path
 src_dir = Path(__file__).parent / 'src'
 sys.path.append(str(src_dir))
 
-from src.games.dau_la import DauLa
+from src.games.dau_la.dau_la import DauLa
 from src.utils.logging import setup_logger
 
 def main():

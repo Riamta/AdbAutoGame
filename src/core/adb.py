@@ -119,7 +119,6 @@ class ADBController:
             # First, quickly check if port is open
             host_ip, port_str = host.split(':')
             port = int(port_str)
-            log("Try connect to host: " + host)
             if not _is_port_open(host_ip, port, timeout=0.5):
                 return None
             # Try ADB connect with shorter timeout

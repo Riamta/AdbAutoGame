@@ -160,7 +160,7 @@ class BaseGameAutomation:
                 log_error(f"Error capturing screen: {e}")
                 return None
 
-    def find_template(self, template_path: str, threshold: float = 0.8, use_grayscale: bool = False, debug: bool = True) -> Optional[Tuple[int, int, float]]:
+    def find_template(self, template_path: str, threshold: float = 0.75, use_grayscale: bool = False, debug: bool = True) -> Optional[Tuple[int, int, float]]:
         screen = self.get_latest_screen()
         if screen is None:
             log_info("No screen available from continuous capture")
@@ -478,8 +478,9 @@ class BaseGameAutomation:
             config = yaml.safe_load(file)
         return config
     
-    def find_all_templates(self, screen: np.ndarray, template_path: str, threshold: float = 0.8, use_grayscale: bool = True, debug: bool = False) -> List[Tuple[int, int, float]]:
+    def find_all_templates(self, template_path: str, threshold: float = 0.8, use_grayscale: bool = True, debug: bool = False) -> List[Tuple[int, int, float]]:
         try:
+            screen = self.get_latest_screen()
             # Use consistent preprocessing logic like find_template method
             roi_offset_x, roi_offset_y = 0, 0
             

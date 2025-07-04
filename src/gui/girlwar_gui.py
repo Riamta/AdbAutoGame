@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 
 from src.gui.base_gui import BaseGameGUI, create_app
-from src.games.girlwar import TestADBGameAutomation
+from src.games.girlwars.girlwar import TestADBGameAutomation
 
 class GirlwarGUI(BaseGameGUI):
     def __init__(self):
