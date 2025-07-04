@@ -23,19 +23,8 @@ if not root_logger.handlers:
     root_logger.addHandler(console_handler)
 
 def setup_logger(name: str, log_dir: str = "logs") -> logging.Logger:
-    """
-    Set up a logger with consistent formatting and file output.
-    
-    Args:
-        name: Name of the logger/game
-        log_dir: Directory to store log files
-        
-    Returns:
-        logging.Logger: Configured logger instance
-    """
     # Get existing logger if it exists
     logger = logging.getLogger(name)
-    
     # Return existing logger if it's already configured
     if logger.handlers:
         return logger

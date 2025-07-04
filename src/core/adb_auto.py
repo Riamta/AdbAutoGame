@@ -3,6 +3,7 @@ import keyboard
 import numpy as np
 import time
 import asyncio
+import threading
 from typing import Tuple, Optional
 from ppadb.client import Client as AdbClient
 from utils import log_error, log_info, log_success, log_warning
@@ -13,83 +14,86 @@ class ADBGameAutomation(BaseGameAutomation):
     def __init__(self, config_file: Optional[str] = None, device_id: str = None, host: str = "127.0.0.1", port: int = 5037):
         # Initialize with None window_title since we don't need window handling for ADB
         super().__init__(window_title=None, config_file=config_file)
-        self._last_capture_time = 0
-        self._capture_cache = None
-        self._capture_interval = 0.033  # ~30fps
-        self._template_cache = {}
-        
         # Initialize ADB controller
         self.adb = ADBController(device_id=device_id, host=host, port=port)
-        
         self.window_handle = 1  # Dummy value to prevent None checks
         self.monitor = {"top": 0, "left": 0, "width": 0, "height": 0}  # Will be updated with device screen size
-
         width, height = self.adb.get_screen_size()
         if width > 0 and height > 0:
             self.monitor["width"] = width
             self.monitor["height"] = height
+        
+        # Override continuous capture settings for ADB
+        self.capture_interval = 0.5  # Capture every 0.5 seconds for ADB
+    
+    def _continuous_capture_worker(self):
+        log_info("Starting continuous ADB screen capture thread")
+        while self.capture_running:
+            try:
+                result = self.adb.capture_screen_raw()
+                if result:
+                    nparr = np.frombuffer(result, np.uint8)
+                    screen = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    if screen is not None:
+                        # Update latest screen with thread safety
+                        with self.screen_lock:
+                            self.latest_screen = screen
+                        
+                time.sleep(self.capture_interval)
+            except Exception as e:
+                log_error(f"Error in continuous ADB capture: {e}")
+                time.sleep(self.capture_interval)
+        log_info("Continuous ADB screen capture thread stopped")
 
     def find_window(self) -> bool:
         return True
 
     def capture_screen(self) -> Optional[np.ndarray]:
-        cache_interval = 0.016
-        if (time.time() - self._last_capture_time) < cache_interval and self._capture_cache is not None:
-            return self._capture_cache
-        try:
-            result = self.adb.capture_screen_raw()
-            if not result:
-                log_warning("Empty screencap result")
-                return None
-            nparr = np.frombuffer(result, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if image is None:
-                log_error("Failed to decode screenshot")
-                return None
+        """Get screen - either latest from continuous capture or capture new one."""
+        if self.capture_running:
+            return self.get_latest_screen()
+        else:
+            # Fallback to direct capture if continuous capture is disabled
+            try:
+                result = self.adb.capture_screen_raw()
+                if not result:
+                    log_warning("Empty screencap result")
+                    return None
+                nparr = np.frombuffer(result, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                if image is None:
+                    log_error("Failed to decode screenshot")
+                    return None
 
-            # Update cache
-            self._capture_cache = image
-            self._last_capture_time = time.time()
-            return image
+                return image
 
-        except Exception as e:
-            log_error(f"Error capturing screen: {e}")
-            return None
+            except Exception as e:
+                log_error(f"Error capturing screen: {e}")
+                return None
     
     # Tap gesture
-    def tap(self, x: int, y: int, duration: float = 0.1) -> bool:
-        return self.adb.tap(x, y, duration)
+    def tap(self, x: int, y: int, duration: float = 0.1, tap_count: int = 1) -> bool:
+        return self.adb.tap(x, y, duration, tap_count)
         
-    def find_and_tap(self, screen: np.ndarray, template_name: str, log: str = "", threshold = 0.9, use_enhanced: bool = False, scale = 1, scales = [1.2]) -> bool:
+    def find_and_tap(self, template_name: str, log: str = "", threshold = 0.8, tap_count: int = 1) -> bool:
         start_time = time.time()
         template = self.load_template(template_name)
         if template is None:
             log_error(f"Failed to load template {template_name}")
             return False
-        if use_enhanced:
-            result = self.find_template_enhanced(screen, template_name, threshold=threshold, scales=scales)
-            if result:
-                x, y, confidence = result
-                tap_start = time.time()
-                if self.tap(x, y):
-                    tap_time = time.time() - tap_start
-                    total_time = time.time() - start_time
-                    if log:
-                        log_info(f"{log} (enhanced confidence: {confidence:.2f}, tap: {tap_time:.2f}s, total: {total_time:.2f}s)")
-                    return True
         
-        result = self.find_template(screen, template_name, threshold=threshold, scale=scale)
+        result = self.find_template(template_name, threshold=threshold)
         if result:
             x, y, confidence = result
             tap_start = time.time()
-            if self.tap(x, y):
+            if self.tap(x, y, tap_count = tap_count):
                 tap_time = time.time() - tap_start
                 total_time = time.time() - start_time
                 log_success(f"[FIND TAP] - [{x}, {y}] - [{template_name.replace(self.templates_dir, '').replace('/', '')}] - [confidence: {confidence:.2f}, tap: {tap_time:.2f}s, total: {total_time:.2f}s]")
                 return True
         return False
     
-    def find_and_tap_position(self, screen: np.ndarray, template_name: str, x: int, y: int, retries: int = 1, log: str = "", threshold = 0.9, use_enhanced: bool = False, scale = 1, scales = [1.2]) -> bool:
+    def find_and_tap_position(self, template_name: str, x: int, y: int, log: str = "", threshold = 0.9) -> bool:
         start_time = time.time()
         # If no template specified, just tap at coordinates
         if not template_name:
@@ -105,46 +109,28 @@ class ADBGameAutomation(BaseGameAutomation):
             log_warning(f"Failed to load template {template_name}")
             return False
         
-        for attempt in range(retries):
-            if use_enhanced:
-                result = self.find_template(screen, template_name, threshold=threshold, scales=scales)
-                if result:
-                    if self.tap(x, y):
-                        total_time = time.time() - start_time
-                        if log:
-                            log_info(f"{log} (enhanced confidence: {result[2]:.2f}, total: {total_time:.2f}s)")
-                        return True
-            
-            result = self.find_template(screen, template_name, threshold=threshold, scale=scale)
-            if result:
-                if self.tap(x, y):
-                    total_time = time.time() - start_time
-                    log_success(f"[FIND TAP POSITION] - [{x}, {y}] - [{template_name.replace(self.templates_dir, '').replace('/', '')}] - [confidence: {result[2]:.2f}, total: {total_time:.2f}s]")
-                    return True
-                    
-            if attempt < retries - 1:
-                time.sleep(0.1)
-                screen = self.capture_screen()
-                if screen is None:
-                    return False
-            
+        result = self.find_template(template_name, threshold=threshold)
+        if result:
+            if self.tap(x, y):
+                total_time = time.time() - start_time
+                log_success(f"[FIND TAP POSITION] - [{x}, {y}] - [{template_name.replace(self.templates_dir, '').replace('/', '')}] - [confidence: {result[2]:.2f}, total: {total_time:.2f}s]")
+                return True
+                
         total_time = time.time() - start_time
         return False
     
-    def find_and_tap_position_with_offset(self, template_name: str, offset: Tuple[int, int] = (0, 0), retries: int = 1, log: str = "", threshold = 0.9, use_enhanced: bool = False, scale = 1, scales = [1.2], screen = None) -> bool:
+    def find_and_tap_position_with_offset(self, template_name: str, offset: Tuple[int, int] = (0, 0),  threshold = 0.6,) -> bool:
         start_time = time.time()
-        result = self.find_template(screen, template_name, threshold=threshold, scale=scale)
+        result = self.find_template(template_name, threshold=threshold)
         if result:
             x, y, confidence = result
             if self.tap(x + offset[0], y + offset[1]):
                 total_time = time.time() - start_time
-                if log:
-                    log_info(f"{log} (confidence: {confidence:.2f}, total: {total_time:.2f}s)")
                 return True
         return False
 
-    def wait_and_tap(self, template_name: str, timeout: float = 30.0, interval: float = 0.5, threshold: float = 0.9, use_enhanced: bool = False, tap_delay: float = 0.1) -> bool:
-        result = self.wait_for_template(template_name, timeout, interval, threshold, use_enhanced)
+    def wait_and_tap(self, template_name: str, timeout: float = 30.0, interval: float = 0.5, threshold: float = 0.9, tap_delay: float = 0.1) -> bool:
+        result = self.wait_for_template(template_name, timeout, interval, threshold)
         if result:
             x, y, confidence = result
             if self.tap(x, y, tap_delay):
@@ -175,6 +161,10 @@ class ADBGameAutomation(BaseGameAutomation):
         width, height = self.get_screen_size()
         return self.swipe(x, y, x, y + 200, duration)
 
+    # Drag gesture
+    def drag(self, x1: int, y1: int, x2: int, y2: int, duration: int = 300) -> bool:
+        return self.adb.drag(x1, y1, x2, y2, duration)
+    
     # Common gestures
     def go_back(self) -> bool:
         """Press back button"""
@@ -185,11 +175,6 @@ class ADBGameAutomation(BaseGameAutomation):
         return self.adb.go_home()
 
     def load_template(self, template_path: str, grayscale: bool = False) -> Optional[np.ndarray]:
-        cache_key = f"{template_path}_{grayscale}"
-        # Check cache first
-        if cache_key in self._template_cache:
-            return self._template_cache[cache_key]
-            
         try:
             if grayscale:
                 template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
@@ -201,47 +186,29 @@ class ADBGameAutomation(BaseGameAutomation):
                 return None
             
             template = template.astype(np.uint8)
-            
-            # Cache the template
-            self._template_cache[cache_key] = template
             return template
             
         except Exception as e:
             log_error(f"Error loading template {template_path}: {e}")
             return None
 
-    def clear_template_cache(self):
-        self._template_cache.clear()
-        # Also clear parent class cache if it exists
-        if hasattr(self, 'template_cache'):
-            self.template_cache.clear()
-        if hasattr(self, 'template_cache_gray'):
-            self.template_cache_gray.clear()
-        log_info("Template cache cleared")
-        
     def get_performance_info(self) -> dict:
         return {
-            "template_cache_size": len(self._template_cache),
-            "last_capture_time": self._last_capture_time,
-            "capture_interval": self._capture_interval
+            "capture_interval": self.capture_interval
         }
-        
 
-    def batch_find_templates(self, template_names: list, threshold: float = 0.9, use_enhanced: bool = False) -> dict:
+    def batch_find_templates(self, template_names: list, threshold: float = 0.9) -> dict:
         results = {}
-        screen = self.capture_screen()
-        if screen is None:
-            return results
         
         for template_name in template_names:
-            result = self.find_template(screen, template_name, threshold=threshold, use_enhanced=use_enhanced)
+            result = self.find_template(template_name, threshold=threshold)
             if result:
                 results[template_name] = result
         
         return results
 
     def wait_for_template(self, template_name: str, timeout: float = 30.0, interval: float = 0.5, 
-                         threshold: float = 0.9, use_enhanced: bool = False, log_progress: bool = True) -> Optional[Tuple[int, int, float]]:
+                         threshold: float = 0.9, log_progress: bool = True) -> Optional[Tuple[int, int, float]]:
         start_time = time.time()
         attempts = 0
         
@@ -257,18 +224,8 @@ class ADBGameAutomation(BaseGameAutomation):
         while time.time() - start_time < timeout:
             attempts += 1
             
-            # Capture current screen
-            screen = self.capture_screen()
-            if screen is None:
-                log_warning(f"Failed to capture screen during wait (attempt {attempts})")
-                time.sleep(interval)
-                continue
-            
-            # Check for template
-            if use_enhanced:
-                result = self.find_template_enhanced(screen, template_name, threshold=threshold)
-            else:
-                result = self.find_template(screen, template_name, threshold=threshold)
+            # Check for template using continuous capture
+            result = self.find_template(template_name, threshold=threshold)
             
             if result:
                 elapsed_time = time.time() - start_time
@@ -292,7 +249,7 @@ class ADBGameAutomation(BaseGameAutomation):
         return None
 
     def wait_for_any_template(self, template_names: list, timeout: float = 30.0, interval: float = 0.5,
-                             threshold: float = 0.9, use_enhanced: bool = False, log_progress: bool = True) -> Optional[Tuple[str, int, int, float]]:
+                             threshold: float = 0.9, log_progress: bool = True) -> Optional[Tuple[str, int, int, float]]:
         start_time = time.time()
         attempts = 0
         
@@ -315,19 +272,9 @@ class ADBGameAutomation(BaseGameAutomation):
         while time.time() - start_time < timeout:
             attempts += 1
             
-            # Capture current screen
-            screen = self.capture_screen()
-            if screen is None:
-                log_warning(f"Failed to capture screen during wait (attempt {attempts})")
-                time.sleep(interval)
-                continue
-            
-            # Check each template
+            # Check each template using continuous capture
             for template_name in templates.keys():
-                if use_enhanced:
-                    result = self.find_template_enhanced(screen, template_name, threshold=threshold)
-                else:
-                    result = self.find_template(screen, template_name, threshold=threshold)
+                result = self.find_template(template_name, threshold=threshold)
                 
                 if result:
                     elapsed_time = time.time() - start_time
@@ -392,7 +339,7 @@ class ADBGameAutomation(BaseGameAutomation):
                 # If we got here and have a device, we succeeded
                 self.adb.client = client
                 self.adb.port = port
-                log_info(f"Successfully connected to device {self.adb.device_id} on port {port}")
+                log_success(f"Successfully connected to device {self.adb.device_id} on port {port}")
                 return True
 
             except Exception as e:
@@ -420,38 +367,48 @@ class ADBGameAutomation(BaseGameAutomation):
         log_info("Starting ADB automation... Press 'q' to quit")
         self.running = True
         
+        self.start_continuous_capture()
+        
         last_error_time = 0
         error_cooldown = 5.0
         
-        while self.running:
-            try:
-                if keyboard.is_pressed('q'):
-                    log_info("Stopping automation...")
-                    self.running = False
-                    break
+        try:
+            while self.running:
+                try:
+                    if keyboard.is_pressed('q'):
+                        log_info("Stopping automation...")
+                        self.running = False
+                        break
 
-                # Verify device is still connected
-                if not self.adb.device:
+                    # Verify device is still connected
+                    if not self.adb.device:
+                        current_time = time.time()
+                        if current_time - last_error_time >= error_cooldown:
+                            log_warning("ADB device disconnected, attempting to reconnect...")
+                            try:
+                                self.adb.check_adb_connection()
+                            except Exception as e:
+                                log_error(f"Failed to reconnect: {e}")
+                            last_error_time = current_time
+                        time.sleep(1)
+                        continue
+                    
+                    # Check if process_game_actions is a coroutine
+                    if asyncio.iscoroutinefunction(self.process_game_actions):
+                        asyncio.run(self.process_game_actions())
+                    else:
+                        self.process_game_actions()
+                    
+                    # Small delay to prevent excessive CPU usage
+                    time.sleep(0.1)
+                        
+                except Exception as e:
                     current_time = time.time()
                     if current_time - last_error_time >= error_cooldown:
-                        log_warning("ADB device disconnected, attempting to reconnect...")
-                        try:
-                            self.adb.check_adb_connection()
-                        except Exception as e:
-                            log_error(f"Failed to reconnect: {e}")
+                        log_error(f"Error in ADB automation loop: {e}")
                         last_error_time = current_time
-                    time.sleep(1)
-                    continue
-                
-                # Check if process_game_actions is a coroutine
-                if asyncio.iscoroutinefunction(self.process_game_actions):
-                    asyncio.run(self.process_game_actions())
-                else:
-                    self.process_game_actions()
-                    
-            except Exception as e:
-                current_time = time.time()
-                if current_time - last_error_time >= error_cooldown:
-                    log_error(f"Error in ADB automation loop: {e}")
-                    last_error_time = current_time
-                time.sleep(0.5)
+                    time.sleep(0.5)
+        finally:
+            # Stop continuous capture when exiting
+            if self.capture_running:
+                self.stop_continuous_capture()

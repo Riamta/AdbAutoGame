@@ -79,14 +79,14 @@ class ADBController:
                         # Use first device if only one available
                         self.device = devices[0]
                         self.device_id = self.device.serial
-                        log_info(f"Connected to device: {self.device_id}")
+                        log_success(f"Connected to device: {self.device_id}")
                         return True
                 else:
                     # Find specified device
                     for device in devices:
                         if device.serial == self.device_id:
                             self.device = device
-                            log_info(f"Connected to device: {self.device_id}")
+                            log_success(f"Connected to device: {self.device_id}")
                             return True
             log_warning("Can't find device, trying to connect with ports")            
             for host in HOSTS:
@@ -158,10 +158,10 @@ class ADBController:
             log_error(f"Error getting screen size: {e}")
             return (0, 0)
 
-    def tap(self, x: int, y: int, duration: float = 0.1) -> bool:
-        """Tap at the specified coordinates."""
+    def tap(self, x: int, y: int, duration: float = 0.1, tap_count: int = 1) -> bool:
         try:
-            self.device.shell(f"input touchscreen tap {x} {y}")
+            for i in range(tap_count):
+                self.device.shell(f"input touchscreen tap {x} {y}")
             time.sleep(duration)
             return True
         except Exception as e:
@@ -177,6 +177,14 @@ class ADBController:
             log_error(f"Error swiping: {e}")
             return False
 
+    def drag(self, x1: int, y1: int, x2: int, y2: int, duration: int = 300) -> bool:
+        try:
+            self.device.shell(f"input swipe {x1} {y1} {x2} {y2} {duration}")
+            return True
+        except Exception as e:
+            log_error(f"Error dragging: {e}")
+            return False
+        
     def send_text(self, text: str) -> bool:
         """Send text input to the device."""
         try:

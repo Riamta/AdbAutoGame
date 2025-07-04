@@ -38,6 +38,7 @@ class TestADBGameAutomation(ADBGameAutomation):
             'before_battle': f"{self.templates_dir}/before_battle.png",
             'congrats': f"{self.templates_dir}/congrats.png",
             'levelup': f"{self.templates_dir}/levelup.png",
+            'next_floor': f"{self.templates_dir}/next_floor.png",
         }
         self.global_rich_path = {
             'go': f"{self.templates_dir}/go.png",
@@ -65,10 +66,10 @@ class TestADBGameAutomation(ADBGameAutomation):
             self.check_skip_dialog(current_screen)
             # self.handle_global_rich(current_screen)
             # self.handle_dock(current_screen)
-            # self.elite_stage(current_screen)
-            # self.handle_dungeon_stage(current_screen)
+           # self.handle_elite_stage(current_screen)
+            self.handle_dungeon_stage(current_screen)
             # self.handle_battle(current_screen)
-            self.handle_main_story(current_screen)
+            #self.handle_main_story(current_screen)
 
     def check_skip_dialog(self, current_screen):
         self.find_and_tap(current_screen, self.button_paths['skip_dialog'],  log="skip_dialog")
@@ -101,6 +102,7 @@ class TestADBGameAutomation(ADBGameAutomation):
         except Exception as e:
             log_error(f"Error in game actions: {e}", exc_info=True)
 
+
     def handle_main_story(self, current_screen):
         self.find_and_tap(current_screen, self.button_paths['levelup'], log="levelup", threshold=0.6)
         self.find_and_tap(current_screen, self.button_paths['challenge'], log="challenge", threshold=0.8)
@@ -115,7 +117,8 @@ class TestADBGameAutomation(ADBGameAutomation):
         self.find_and_tap(current_screen, self.button_paths['tap_to_continue'], use_enhanced=False, log="tap_to_continue", threshold=0.8)
 
     def handle_dungeon_stage(self, current_screen):
-        self.find_and_tap_position(current_screen, self.button_paths['dungeon_floor'], 1579, 985, log="dungeon_floor")
-        self.find_and_tap_position(current_screen, self.button_paths['check_start_battle'], 1600/2, 900/2, log="check_start_battle")
-        self.find_and_tap(current_screen, self.button_paths['continue_battling'],  log="continue_battling")
+        self.find_and_tap(current_screen, self.button_paths['next_floor'])
+        self.find_and_tap_position(current_screen, self.button_paths['dungeon_floor'], 1579, 985)
+        self.find_and_tap_position(current_screen, self.button_paths['check_start_battle'], 1600/2, 900/2)
+        self.find_and_tap(current_screen, self.button_paths['continue_battling'])
         self.handle_battle(current_screen)
