@@ -3,6 +3,9 @@ from typing import Optional, List, Tuple
 import time
 import os
 import subprocess
+import socket
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from utils import log_error, log_info, log_success, log_warning, log
 
 # Key codes for ADB input
@@ -13,9 +16,17 @@ KEYCODE_VOLUME_UP = 24
 KEYCODE_VOLUME_DOWN = 25
 KEYCODE_POWER = 26
 KEYCODE_ENTER = 66
-HOSTS = [
-    "127.0.0.1:7555",
-]
+# Generate host range from 16000 to 17000
+HOSTS_MUMU = [f"127.0.0.1:{port}" for port in range(16000, 17001)]
+
+def _is_port_open(host: str, port: int, timeout: float = 1.0) -> bool:
+    """Quickly check if a port is open"""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (socket.timeout, socket.error):
+        return False
+
 def _setup_adb_path():
     try:
         # Get the absolute path to the binaries directory
@@ -41,6 +52,7 @@ class ADBController:
         self.device = None
         self.check_adb_connection()
 
+    # Check ADB connection
     def check_adb_connection(self) -> bool:
         try:
             log("Checking ADB connection...")
@@ -89,22 +101,51 @@ class ADBController:
                             log_success(f"Connected to device: {self.device_id}")
                             return True
             log_warning("Can't find device, trying to connect with ports")            
-            for host in HOSTS:
-                log_info(f"Checking ADB connection with ports: {host}")
-                if self.check_adb_connection_with_ports(host):
-                    return True
+            if self.check_adb_connection_with_ports():
+                return True
             
             return False
                     
         except Exception as e:
             log_error(f"Error checking ADB connection: {e}")
             # Try port scanning as fallback
-            for host in self.host:
-                if self.check_adb_connection_with_ports(host):
-                    return True
+            if self.check_adb_connection_with_ports():
+                return True
             raise
 
-    def check_adb_connection_with_ports(self, address: str) -> bool:
+    def _try_connect_to_host(self, host: str, adb_exe_path: str) -> Optional[str]:
+        """Try to connect to a single host and return device serial if successful"""
+        try:
+            # First, quickly check if port is open
+            host_ip, port_str = host.split(':')
+            port = int(port_str)
+            log("Try connect to host: " + host)
+            if not _is_port_open(host_ip, port, timeout=0.5):
+                return None
+            # Try ADB connect with shorter timeout
+            result = subprocess.run(
+                [adb_exe_path, "connect", host],
+                capture_output=True,
+                text=True,
+                timeout=3  # Reduced from 10 to 3 seconds
+            )
+            # Check if devices are available
+            client = AdbClient(host=self.host, port=self.port)
+            devices = client.devices()
+            
+            if devices:
+                # Return first matching device
+                for device in devices:
+                    if device.serial == host or (self.device_id and device.serial == self.device_id):
+                        return device.serial
+                # If no specific match, return first device
+                return devices[0].serial
+                        
+        except Exception as e:
+            log_error(f"Lỗi khi thử kết nối với {host}: {e}")
+        return None
+
+    def check_adb_connection_with_ports(self) -> bool:
         # Lấy đường dẫn tới file thực thi ADB
         current_dir = os.path.dirname(os.path.abspath(__file__))
         root_dir = os.path.dirname(os.path.dirname(current_dir))
@@ -114,41 +155,54 @@ class ADBController:
             log_error(f"Không tìm thấy file ADB tại: {adb_exe_path}")
             return False
         try:
-            # Thử kết nối bằng lệnh adb connect
-            subprocess.run(
-                [adb_exe_path, "connect", address],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-                
-            # Thử thiết lập kết nối qua ppadb
-            client = AdbClient(host=self.host, port=self.port)
-            devices = client.devices()
+            log_info(f"Scanning {len(HOSTS_MUMU)} ports with parallel threading...")
             
-            if devices:
-                self.client = client
-                # Kiểm tra ID thiết bị cụ thể nếu có
-                if self.device_id:
-                    for device in devices:
-                        if device.serial == self.device_id or device.serial == address:
-                            self.device = device
-                            self.device_id = device.serial
-                            log_success(f"Đã kết nối tới thiết bị {self.device_id}")
-                            return True
-                else:
-                    # Sử dụng thiết bị đầu tiên nếu không chỉ định
-                    self.device = devices[0]
-                    self.device_id = self.device.serial
-                    log_success(f"Đã kết nối tới thiết bị {self.device_id}")
-                    return True
-                    
+            found_devices = []  # Store all found devices
+            
+            # Use ThreadPoolExecutor for parallel scanning
+            with ThreadPoolExecutor(max_workers=30) as executor:  # Limit concurrent connections
+                # Submit all tasks
+                future_to_host = {
+                    executor.submit(self._try_connect_to_host, host, adb_exe_path): host 
+                    for host in HOSTS_MUMU
+                }
+                # Process results as they complete - but don't stop early
+                for future in as_completed(future_to_host):
+                    host = future_to_host[future]
+                    try:
+                        device_serial = future.result()
+                        if device_serial:
+                            log_success(f"Found device {device_serial} on {host}")
+                            found_devices.append((device_serial, host))
+                    except Exception as e:
+                        log_error(f"Error processing result for {host}: {e}")
+            
+            # After scanning all ports, connect to the first found device
+            if found_devices:
+                device_serial, host = found_devices[0]  # Use first found device
+                log_info(f"Total devices found: {len(found_devices)}")
+                for serial, host_addr in found_devices:
+                    log_info(f"  - Device {serial} on {host_addr}")
+                
+                # Set up connection to the first device
+                client = AdbClient(host=self.host, port=self.port)
+                devices = client.devices()
+                for device in devices:
+                    if device.serial == device_serial:
+                        self.client = client
+                        self.device = device
+                        self.device_id = device.serial
+                        log_success(f"Successfully connected to device: {self.device_id}")
+                        return True
+                        
+            log_warning("No devices found on any port")
             return False
             
         except Exception as e:
             log_error(f"Lỗi khi thử kết nối: {e}")
             return False
 
+    # Get screen size
     def get_screen_size(self) -> Tuple[int, int]:
         try:
             result = self.device.shell("wm size")

@@ -46,7 +46,6 @@ class BaseGameAutomation:
         self.capture_running = False
         
     def _continuous_capture_worker(self):
-        """Background thread worker for continuous screen capture."""
         log_info("Starting continuous screen capture thread")
         while self.capture_running:
             try:
@@ -82,8 +81,6 @@ class BaseGameAutomation:
             if self.capture_thread and self.capture_thread.is_alive():
                 self.capture_thread.join(timeout=2.0)
             log_info("Continuous screen capture stopped")
-    
-   
    
     def get_latest_screen(self) -> Optional[np.ndarray]:
         """Get the latest captured screen with thread safety."""
@@ -481,74 +478,6 @@ class BaseGameAutomation:
             config = yaml.safe_load(file)
         return config
     
-    def find_template_fast(self, screen: np.ndarray, template_path: str, threshold: float = 0.8, downsample_factor: float = 0.5) -> Optional[Tuple[int, int, float]]:
-        """Ultra-fast template matching using downsampling and then refining."""
-        try:
-            # Load template (grayscale for speed)
-            template_gray = self.load_template(template_path, grayscale=True)
-            if template_gray is None:
-                return None
-            
-            # Convert screen to grayscale (screen is already BGR from capture_screen)
-            if len(screen.shape) == 3:
-                screen_gray = cv2.cvtColor(screen, cv2.COLOR_BGR2GRAY)
-            else:
-                screen_gray = screen
-            
-            # Ensure data types are consistent
-            screen_gray = screen_gray.astype(np.uint8)
-            template_gray = template_gray.astype(np.uint8)
-            
-            # Downsample for fast initial search
-            if downsample_factor < 1.0:
-                # Downsample screen and template
-                down_screen = cv2.resize(screen_gray, 
-                                       (int(screen_gray.shape[1] * downsample_factor), 
-                                        int(screen_gray.shape[0] * downsample_factor)))
-                down_template = cv2.resize(template_gray,
-                                         (int(template_gray.shape[1] * downsample_factor),
-                                          int(template_gray.shape[0] * downsample_factor)))
-                
-                # Fast search on downsampled images
-                result = cv2.matchTemplate(down_screen, down_template, cv2.TM_CCOEFF_NORMED)
-                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-                
-                if max_val >= threshold * 0.8:  # Lower threshold for downsampled
-                    # Scale back coordinates for refined search
-                    scale_back = 1.0 / downsample_factor
-                    approx_x = int(max_loc[0] * scale_back)
-                    approx_y = int(max_loc[1] * scale_back)
-                    
-                    # Define ROI around the approximate location for refined search
-                    margin = max(template_gray.shape[0], template_gray.shape[1])
-                    roi_x = max(0, approx_x - margin//2)
-                    roi_y = max(0, approx_y - margin//2)
-                    roi_w = min(screen_gray.shape[1] - roi_x, margin * 2)
-                    roi_h = min(screen_gray.shape[0] - roi_y, margin * 2)
-                    
-                    # Refined search in ROI
-                    roi_screen = screen_gray[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
-                    refined_result = cv2.matchTemplate(roi_screen, template_gray, cv2.TM_CCOEFF_NORMED)
-                    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(refined_result)
-                    
-                    if max_val >= threshold:
-                        final_x = max_loc[0] + roi_x
-                        final_y = max_loc[1] + roi_y
-                        log_success(f"Found {os.path.basename(template_path)} at {final_x}, {final_y} with confidence {max_val:.3f} (fast)")
-                        return (final_x, final_y, max_val)
-            else:
-                # No downsampling, direct search
-                result = cv2.matchTemplate(screen_gray, template_gray, cv2.TM_CCOEFF_NORMED)
-                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-                
-                if max_val >= threshold:
-                    log_success(f"Found {os.path.basename(template_path)} at {max_loc[0]}, {max_loc[1]} with confidence {max_val:.3f}")
-                    return (max_loc[0], max_loc[1], max_val)
-            
-        except Exception as e:
-            log_error(f"Error in fast template matching: {e}")
-        return None
-
     def find_all_templates(self, screen: np.ndarray, template_path: str, threshold: float = 0.8, use_grayscale: bool = True, debug: bool = False) -> List[Tuple[int, int, float]]:
         try:
             # Use consistent preprocessing logic like find_template method

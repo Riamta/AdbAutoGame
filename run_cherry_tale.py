@@ -10,7 +10,7 @@ from pathlib import Path
 src_dir = Path(__file__).parent / 'src'
 sys.path.append(str(src_dir))
 
-from src.games.cherry_tale import CherryTale
+from src.games.cherry_tale.cherry_tale import CherryTale
 from utils import log_error, log_info, log_success, log_warning
 
 def main():
